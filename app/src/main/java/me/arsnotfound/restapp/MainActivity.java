@@ -3,26 +3,27 @@ package me.arsnotfound.restapp;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.Toast;
 
-import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 import me.arsnotfound.restapp.databinding.ActivityMainBinding;
+import me.arsnotfound.restapp.dummyapi.DummyJSONService;
+import me.arsnotfound.restapp.dummyapi.Product;
 import okhttp3.CacheControl;
-import okhttp3.Call;
-import okhttp3.Callback;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.Response;
 import okhttp3.logging.HttpLoggingInterceptor;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.moshi.MoshiConverterFactory;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -35,46 +36,44 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        binding.sendBtn.setOnClickListener(this::sendPost);
+        binding.sendBtn.setOnClickListener(this::getProduct);
     }
 
-    private void sendPost(View view) {
-        String lastname = binding.lastNameField.getText().toString();
-        String firstname = binding.firstNameField.getText().toString();
+    private void getProduct(View view) {
+       HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
+       loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
 
-        HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
-        logging.setLevel(HttpLoggingInterceptor.Level.BODY);
+       OkHttpClient client = new OkHttpClient.Builder()
+               .addInterceptor(loggingInterceptor)
+               .build();
 
-        OkHttpClient client = new OkHttpClient.Builder()
-                .addInterceptor(logging)
-                .build();
+       Retrofit retrofit = new Retrofit.Builder()
+               .client(client)
+               .baseUrl("https://dummyjson.com/")
+               .addConverterFactory(MoshiConverterFactory.create())
+               .build();
 
-        HttpUrl.Builder urlBuilder = HttpUrl.parse("http://172.18.1.1:8080/").newBuilder();
-        urlBuilder.addQueryParameter("lastname", lastname);
-        urlBuilder.addQueryParameter("firstname", firstname);
+        DummyJSONService service = retrofit.create(DummyJSONService.class);
 
-        Request request = new Request.Builder()
-                .url(urlBuilder.build())
-                .cacheControl(new CacheControl.Builder().maxStale(30, TimeUnit.DAYS).build())
-                .build();
+        int id = Integer.parseInt(binding.idField.getText().toString());
 
-        client.newCall(request).enqueue(new Callback() {
+        service.getProduct(id).enqueue(new Callback<Product>() {
             @Override
-            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                Log.e("Callback", "Failed to make request", e);
+            public void onResponse(@NonNull Call<Product> call, @NonNull Response<Product> response) {
+                if (!response.isSuccessful()) {
+                    Log.e("CALLBACK", "Unexpected response code " + response.code());
+                    Toast.makeText(MainActivity.this, "Unexpected response code " + response.code(), Toast.LENGTH_LONG).show();
+                }
+
+                if (response.body() != null) {
+                    binding.result.setText(response.body().getTitle());
+                }
             }
 
             @Override
-            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    throw new IOException("Unexpected code " + response);
-                }
-
-                final String responseData = response.body().string();
-
-                MainActivity.this.runOnUiThread(() -> {
-                    binding.result.setText(responseData);
-                });
+            public void onFailure(@NonNull Call<Product> call, @NonNull Throwable throwable) {
+                Log.e("CALLBACK", "Failed to call API", throwable);
+                Toast.makeText(MainActivity.this, "Failed to call API", Toast.LENGTH_LONG).show();
             }
         });
     }
